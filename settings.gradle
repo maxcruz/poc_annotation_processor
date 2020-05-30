@@ -1,0 +1,6 @@
+include ':app'
+include ':tracking'
+include 'tracking-generator:processor'
+include 'tracking-generator:annotation'
+
+rootProject.name = "poc_annotation_processor"
