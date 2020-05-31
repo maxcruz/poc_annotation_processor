@@ -8,19 +8,28 @@ class DecoratorClassBuilder(
 
     fun getContent(): String {
         return """
-        package $packageName
+        package $packageName;
         
-        import com.example.tracking.Tracker
-        import javax.inject.Inject
+        import com.example.tracking.Tracker;
+        import javax.inject.Inject;
         
-        class $className @Inject constructor(val tracker: Tracker): $interfaceName {
-             
-             override fun onMainScreenLoaded() {
-                  tracker.track("onMainScreenLoaded", null)
+        public class $className implements $interfaceName {
+        
+            private Tracker tracker;
+            
+            @Inject
+            public $className(Tracker tracker) {
+                this.tracker = tracker;
+            }
+
+            @Override
+            public void onMainScreenLoaded() {
+                  tracker.track("onMainScreenLoaded", null);
              }
         
-             override fun onButtonClicked(time: String) {
-                  tracker.track("onButtonClicked", mapOf("time" to time))
+             @Override
+             public void onButtonClicked(String time) {
+                  tracker.track("onButtonClicked", null);
              }
              
         }

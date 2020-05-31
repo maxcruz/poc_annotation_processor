@@ -8,7 +8,7 @@ import dagger.Module
 import dagger.Provides
 
 @Module
-object Module {
+object MainModule {
 
     @Provides
     fun providesTracker(fakeTracker: FakeTracker): Tracker = fakeTracker
