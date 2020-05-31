@@ -3,29 +3,43 @@ package com.example.processor
 import com.example.annotation.Event
 import com.example.annotation.EventTracker
 import com.example.annotation.Property
-import java.io.PrintWriter
-import javax.annotation.processing.AbstractProcessor
-import javax.annotation.processing.Filer
-import javax.annotation.processing.RoundEnvironment
+import com.squareup.javapoet.JavaFile
+import java.io.IOException
+import javax.annotation.processing.*
 import javax.lang.model.SourceVersion
+import javax.lang.model.element.Element
 import javax.lang.model.element.ElementKind
 import javax.lang.model.element.TypeElement
+import javax.lang.model.util.Elements
 import javax.tools.Diagnostic
-import kotlin.math.sign
 
-private const val KAPT_KOTLIN_GENERATED_OPTION_NAME = "kapt.kotlin.generated"
-
+/**
+ * This class is going to generate the decorator tracker for the annotated interfaces
+ */
 class DecorateTracker : AbstractProcessor(){
 
-    override fun getSupportedAnnotationTypes(): Set<String?> {
-        val eventTracker = EventTracker::class.qualifiedName
-        val event = Event::class.qualifiedName
-        val property = Property::class.qualifiedName
-        return setOf(eventTracker, event, property)
+    private lateinit var filer: Filer
+    private lateinit var messager: Messager
+    private lateinit var elementUtils: Elements
+
+    override fun init(processingEnvironment: ProcessingEnvironment) {
+        super.init(processingEnvironment)
+        filer = processingEnvironment.filer
+        messager = processingEnvironment.messager
+        elementUtils = processingEnvironment.elementUtils
     }
 
     override fun getSupportedSourceVersion(): SourceVersion {
         return SourceVersion.latest()
+    }
+
+    override fun getSupportedAnnotationTypes(): Set<String?> {
+        val eventTracker = EventTracker::class.qualifiedName
+
+        // Maybe should be removed?
+        val event = Event::class.qualifiedName
+        val property = Property::class.qualifiedName
+        return setOf(eventTracker, event, property)
     }
 
     override fun process(set: MutableSet<out TypeElement>?, roundEnvironment: RoundEnvironment?): Boolean {
@@ -33,42 +47,26 @@ class DecorateTracker : AbstractProcessor(){
         roundEnvironment?.getElementsAnnotatedWith(EventTracker::class.java)
             ?.forEach {
                 if (it.kind != ElementKind.INTERFACE) {
-                    processingEnv.messager.printMessage(Diagnostic.Kind.ERROR, "EventTracker must be applied to an interface")
+                    messager.printMessage(Diagnostic.Kind.ERROR, "EventTracker must be applied to an interface")
                     return false
                 }
-
-
+                // Improve get element metadata min 28:40
                 val className = it.simpleName.toString()
-                val packageName = processingEnv.elementUtils.getPackageOf(it).toString()
-
-                it.getAnnotationsByType(Event::class.java).forEach { event ->
-
-                    processingEnv.messager.printMessage(Diagnostic.Kind.WARNING, "Processing $event")
-                }
-
-                generateClass(className, packageName)
+                val packageName = elementUtils.getPackageOf(it).toString()
+                generateClass(className, packageName, it)
             }
         return true
     }
 
-    private fun generateClass(baseName: String, packageName: String){
-        val fileName = "${baseName}Decorator"
-        val fileContent = DecoratorClassBuilder(
-            packageName = packageName,
-            className = fileName,
-            interfaceName = baseName
-        ).getContent()
-
-        val file = processingEnv.filer.createSourceFile("$packageName.$fileName")
-        val writer = file.openWriter()
-        val output = PrintWriter(writer)
-        output.write(fileContent)
-        output.close()
-        writer.close()
-
-        //file.openWriter()
-        //val kaptKotlinGeneratedDir = processingEnv.options[KAPT_KOTLIN_GENERATED_OPTION_NAME]
-        //val file = File(kaptKotlinGeneratedDir, "$fileName.kt")
-        //file.writeText(fileContent)
+    private fun generateClass(baseName: String, packageName: String, element: Element){
+        val classSpec = DecoratorClassBuilder(baseName, packageName, element).buildDecorator()
+        val file = JavaFile
+            .builder(packageName, classSpec)
+            .build()
+        try {
+            file.writeTo(filer)
+        } catch (error: IOException) {
+            messager.printMessage(Diagnostic.Kind.ERROR, "Failed to write the tracking decorator: $error", element)
+        }
     }
 }

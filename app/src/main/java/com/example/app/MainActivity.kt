@@ -6,7 +6,7 @@ import javax.inject.Inject
 
 class MainActivity : AppCompatActivity() {
 
-    @Inject
+    //@Inject
     lateinit var tracker: MainTracker
 
     override fun onCreate(savedInstanceState: Bundle?) {
