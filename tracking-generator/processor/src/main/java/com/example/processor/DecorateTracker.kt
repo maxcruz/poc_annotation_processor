@@ -6,12 +6,18 @@ import com.example.annotation.Property
 import com.squareup.javapoet.JavaFile
 import com.squareup.javapoet.MethodSpec
 import com.squareup.javapoet.TypeSpec
+import org.w3c.dom.Document
+import java.io.File
 import java.io.IOException
 import javax.annotation.processing.*
 import javax.lang.model.SourceVersion
 import javax.lang.model.element.*
 import javax.lang.model.util.Elements
 import javax.tools.Diagnostic
+import javax.xml.transform.OutputKeys
+import javax.xml.transform.TransformerFactory
+import javax.xml.transform.dom.DOMSource
+import javax.xml.transform.stream.StreamResult
 
 class DecorateTracker : AbstractProcessor(){
 
@@ -41,8 +47,6 @@ class DecorateTracker : AbstractProcessor(){
         if (roundEnvironment?.processingOver() == true) return false
         roundEnvironment?.getElementsAnnotatedWith(EventTracker::class.java)
             ?.forEach { interfaceElement ->
-                //val eventTracker = interfaceElement.getAnnotation(EventTracker::class.java)
-                //eventTracker.engines
                 if (interfaceElement.kind != ElementKind.INTERFACE) {
                     error(interfaceElement, "EventTracker must be applied to an interface")
                     return true
@@ -51,15 +55,22 @@ class DecorateTracker : AbstractProcessor(){
                     .filter { it.kind == ElementKind.METHOD }
                     .map { it as ExecutableElement }
                     .toMethodSpecs()
+                val eventTracker = interfaceElement.getAnnotation(EventTracker::class.java)
+                val document = ResourceBuilder.buildTrackingResource(
+                    events = methods.map { it.first },
+                    engines = eventTracker.engines.toList()
+                )
                 val className = interfaceElement.simpleName.toString()
+                val resourceName = "${className.camelToSnakeCase()}_mapping.xml"
+                writeResourceFile(resourceName, document, interfaceElement)
                 val packageName = elementUtils.getPackageOf(interfaceElement).toString()
-                val builtClass = buildClass(className, interfaceElement, methods)
+                val builtClass = buildClass(className, interfaceElement, methods.map { it.second })
                 writeClassFile(packageName, builtClass, interfaceElement)
             }
         return true
     }
 
-    private fun List<ExecutableElement>.toMethodSpecs(): List<MethodSpec> {
+    private fun List<ExecutableElement>.toMethodSpecs(): List<Pair<String, MethodSpec>> {
         return map { element ->
             val eventName = element.getAnnotation(Event::class.java)
             if (eventName == null) {
@@ -68,7 +79,7 @@ class DecorateTracker : AbstractProcessor(){
             }
             val name = element.simpleName.toString()
             val parameters = element.parameters.toExtraProperties()
-            ClassBuilder.buildMethod(name, eventName.name, parameters)
+            eventName.name to ClassBuilder.buildMethod(name, eventName.name, parameters)
         }
     }
 
@@ -89,6 +100,21 @@ class DecorateTracker : AbstractProcessor(){
             String.format(message, arguments),
             element
         )
+    }
+
+    private fun writeResourceFile(name: String, document: Document, element: Element) {
+        try {
+            val transformerFactory = TransformerFactory.newInstance()
+            val transformer = transformerFactory.newTransformer()
+            transformer.setOutputProperty(OutputKeys.INDENT, "yes")
+            transformer.transform(DOMSource(document), StreamResult(File(name)))
+        } catch (error: IOException) {
+            messager.printMessage(
+                Diagnostic.Kind.ERROR,
+                "Failed to write the tracking decorator: $error",
+                element
+            )
+        }
     }
 
     private fun buildClass(name: String, element: Element, methods: List<MethodSpec>) : TypeSpec =
