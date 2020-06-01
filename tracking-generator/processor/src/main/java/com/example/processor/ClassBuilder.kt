@@ -9,7 +9,9 @@ import javax.lang.model.element.Modifier
 private const val TRACKER_FIELD = "tracker"
 private const val CLASS_SUFIX = "Decorator"
 
-object DecoratorClassBuilder {
+data class ExtraProperty(val key: String, val name: String)
+
+object ClassBuilder {
 
     fun buildClass(baseName: String, element: Element): TypeSpec.Builder {
         val trackerSpec = FieldSpec
@@ -31,31 +33,31 @@ object DecoratorClassBuilder {
             .addMethod(constructorSpec)
     }
 
-    fun buildMethod(name: String, parameters: List<String> = listOf()): MethodSpec {
+    fun buildMethod(name: String, event: String, parameters: List<ExtraProperty> = listOf()): MethodSpec {
         val parametersSpec = parameters.map {
-            ParameterSpec.builder(String::class.java, it).build()
+            ParameterSpec.builder(String::class.java, it.name).build()
         }
-        val properties = if (parameters.isNotEmpty()) "properties" else "null"
+        val propertiesLiteral = if (parameters.isNotEmpty()) "properties" else "null"
         return with(MethodSpec.methodBuilder(name)) {
             addAnnotation(Override::class.java)
             addModifiers(Modifier.PUBLIC)
             returns(TypeName.VOID)
             addParameters(parametersSpec)
-            buildProperties(properties, parameters)
-            addStatement("\$N.track(\$S, \$N)", TRACKER_FIELD, name, properties)
+            buildProperties(propertiesLiteral, parameters)
+            addStatement("\$N.track(\$S, \$N)", TRACKER_FIELD, event, propertiesLiteral)
             build()
         }
     }
 
     private fun MethodSpec.Builder.buildProperties(
-        name: String,
-        parameters: List<String>
+        propertiesName: String,
+        parameters: List<ExtraProperty>
     ): MethodSpec.Builder {
         if (parameters.isEmpty()) return this
         val mapFormat = "\$T<String, String> \$N = new \$T<String, String>()"
-        addStatement(mapFormat, Map::class.java, name, HashMap::class.java)
+        addStatement(mapFormat, Map::class.java, propertiesName, HashMap::class.java)
         parameters.forEach { property ->
-            addStatement("\$N.put(\$S, \$N)", name, property, property)
+            addStatement("\$N.put(\$S, \$N)", propertiesName, property.key, property.name)
         }
         return this
     }
