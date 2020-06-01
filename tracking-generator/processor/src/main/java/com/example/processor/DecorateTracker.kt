@@ -13,9 +13,6 @@ import javax.lang.model.element.TypeElement
 import javax.lang.model.util.Elements
 import javax.tools.Diagnostic
 
-/**
- * This class is going to generate the decorator tracker for the annotated interfaces
- */
 class DecorateTracker : AbstractProcessor(){
 
     private lateinit var filer: Filer
@@ -42,31 +39,46 @@ class DecorateTracker : AbstractProcessor(){
         return setOf(eventTracker, event, property)
     }
 
-    override fun process(set: MutableSet<out TypeElement>?, roundEnvironment: RoundEnvironment?): Boolean {
+    override fun process(
+        annotations: MutableSet<out TypeElement>?,
+        roundEnvironment: RoundEnvironment?
+    ): Boolean {
         if (roundEnvironment?.processingOver() == true) return false
         roundEnvironment?.getElementsAnnotatedWith(EventTracker::class.java)
-            ?.forEach {
-                if (it.kind != ElementKind.INTERFACE) {
-                    messager.printMessage(Diagnostic.Kind.ERROR, "EventTracker must be applied to an interface")
+            ?.forEach { element ->
+                if (element.kind != ElementKind.INTERFACE) {
+                    messager.printMessage(
+                        Diagnostic.Kind.ERROR,
+                        "EventTracker must be applied to an interface",
+                        element
+                    )
                     return false
                 }
-                // Improve get element metadata min 28:40
-                val className = it.simpleName.toString()
-                val packageName = elementUtils.getPackageOf(it).toString()
-                generateClass(className, packageName, it)
+                val className = element.simpleName.toString()
+                val packageName = elementUtils.getPackageOf(element).toString()
+                generateClass(className, packageName, element)
             }
         return true
     }
 
     private fun generateClass(baseName: String, packageName: String, element: Element){
-        val classSpec = DecoratorClassBuilder(baseName, packageName, element).buildDecorator()
+        val classSpec = with(DecoratorClassBuilder) {
+            buildClass(baseName, element)
+                .addMethod(buildMethod("onMainScreenLoaded"))
+                .addMethod(buildMethod("onButtonClicked", listOf("time")))
+                .build()
+        }
         val file = JavaFile
             .builder(packageName, classSpec)
             .build()
         try {
             file.writeTo(filer)
         } catch (error: IOException) {
-            messager.printMessage(Diagnostic.Kind.ERROR, "Failed to write the tracking decorator: $error", element)
+            messager.printMessage(
+                Diagnostic.Kind.ERROR,
+                "Failed to write the tracking decorator: $error",
+                element
+            )
         }
     }
 }
