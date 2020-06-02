@@ -14,6 +14,7 @@ import javax.lang.model.SourceVersion
 import javax.lang.model.element.*
 import javax.lang.model.util.Elements
 import javax.tools.Diagnostic
+import javax.tools.StandardLocation
 import javax.xml.transform.OutputKeys
 import javax.xml.transform.TransformerFactory
 import javax.xml.transform.dom.DOMSource
@@ -107,7 +108,8 @@ class DecorateTracker : AbstractProcessor(){
             val transformerFactory = TransformerFactory.newInstance()
             val transformer = transformerFactory.newTransformer()
             transformer.setOutputProperty(OutputKeys.INDENT, "yes")
-            transformer.transform(DOMSource(document), StreamResult(File(name)))
+            val resource = filer.createResource(StandardLocation.SOURCE_OUTPUT, "", "res/$name", element)
+            transformer.transform(DOMSource(document), StreamResult(resource.openWriter()))
         } catch (error: IOException) {
             messager.printMessage(
                 Diagnostic.Kind.ERROR,
