@@ -3,22 +3,16 @@ package com.example.processor
 import com.example.annotation.Event
 import com.example.annotation.EventTracker
 import com.example.annotation.Property
+import com.example.tracking.TrackerEnum
 import com.squareup.javapoet.JavaFile
 import com.squareup.javapoet.MethodSpec
 import com.squareup.javapoet.TypeSpec
-import org.w3c.dom.Document
-import java.io.File
 import java.io.IOException
 import javax.annotation.processing.*
 import javax.lang.model.SourceVersion
 import javax.lang.model.element.*
 import javax.lang.model.util.Elements
 import javax.tools.Diagnostic
-import javax.tools.StandardLocation
-import javax.xml.transform.OutputKeys
-import javax.xml.transform.TransformerFactory
-import javax.xml.transform.dom.DOMSource
-import javax.xml.transform.stream.StreamResult
 
 class DecorateTracker : AbstractProcessor(){
 
@@ -57,15 +51,11 @@ class DecorateTracker : AbstractProcessor(){
                     .map { it as ExecutableElement }
                     .toMethodSpecs()
                 val eventTracker = interfaceElement.getAnnotation(EventTracker::class.java)
-                val document = ResourceBuilder.buildTrackingResource(
-                    events = methods.map { it.first },
-                    engines = eventTracker.engines.toList()
-                )
+                val engines = eventTracker.engines
+                    .map { TrackerEnum.valueOf("${it}_TRACKER") }
                 val className = interfaceElement.simpleName.toString()
-                val resourceName = "${className.camelToSnakeCase()}_mapping.xml"
-                writeResourceFile(resourceName, document, interfaceElement)
                 val packageName = elementUtils.getPackageOf(interfaceElement).toString()
-                val builtClass = buildClass(className, interfaceElement, methods.map { it.second })
+                val builtClass = buildClass(className, interfaceElement, methods, engines)
                 writeClassFile(packageName, builtClass, interfaceElement)
             }
         return true
@@ -84,15 +74,15 @@ class DecorateTracker : AbstractProcessor(){
         }
     }
 
-    private fun List<VariableElement>.toExtraProperties() : List<ExtraProperty> {
+    private fun List<VariableElement>.toExtraProperties() : Map<String, String> {
         return map { element ->
             val key = element.getAnnotation(Property::class.java)
             if (key == null) {
                 error(element, "Parameter must be annotated with @Property")
-                return listOf()
+                return mapOf()
             }
-            ExtraProperty(key.name, element.simpleName.toString())
-        }
+            key.name to element.simpleName.toString()
+        }.toMap()
     }
 
     private fun error(element: Element, message: String, arguments: List<Any> = listOf()) {
@@ -103,26 +93,17 @@ class DecorateTracker : AbstractProcessor(){
         )
     }
 
-    private fun writeResourceFile(name: String, document: Document, element: Element) {
-        try {
-            val transformerFactory = TransformerFactory.newInstance()
-            val transformer = transformerFactory.newTransformer()
-            transformer.setOutputProperty(OutputKeys.INDENT, "yes")
-            val resource = filer.createResource(StandardLocation.SOURCE_OUTPUT, "", "res/$name", element)
-            transformer.transform(DOMSource(document), StreamResult(resource.openWriter()))
-        } catch (error: IOException) {
-            messager.printMessage(
-                Diagnostic.Kind.ERROR,
-                "Failed to write the tracking decorator: $error",
-                element
-            )
-        }
-    }
-
-    private fun buildClass(name: String, element: Element, methods: List<MethodSpec>) : TypeSpec =
-        ClassBuilder.buildClass(name, element)
+    private fun buildClass(
+        name: String,
+        element: Element,
+        tracking: List<Pair<String, MethodSpec>>,
+        engines: List<TrackerEnum>
+    ) : TypeSpec {
+        val (events, methods) = tracking.unzip()
+        return ClassBuilder.buildClass(name, element, events, engines)
             .addMethods(methods)
             .build()
+    }
 
     private fun writeClassFile(packageName: String, classSpec: TypeSpec, element: Element) {
         val file = JavaFile

@@ -1,19 +1,26 @@
 package com.example.processor
 
 import com.example.tracking.Tracker
+import com.example.tracking.TrackerEnum
 import com.squareup.javapoet.*
+import com.squareup.javapoet.ClassName
+import java.util.*
 import javax.inject.Inject
 import javax.lang.model.element.Element
 import javax.lang.model.element.Modifier
+import kotlin.collections.HashMap
 
 private const val TRACKER_FIELD = "tracker"
 private const val CLASS_SUFIX = "Decorator"
 
-data class ExtraProperty(val key: String, val name: String)
-
 object ClassBuilder {
 
-    fun buildClass(baseName: String, element: Element): TypeSpec.Builder {
+    fun buildClass(
+        baseName: String,
+        element: Element,
+        map: List<String>,
+        engines: List<TrackerEnum>
+    ): TypeSpec.Builder {
         val trackerSpec = FieldSpec
             .builder(Tracker::class.java, TRACKER_FIELD, Modifier.PRIVATE)
             .build()
@@ -23,6 +30,7 @@ object ClassBuilder {
             .addAnnotation(Inject::class.java)
             .addParameter(Tracker::class.java, TRACKER_FIELD)
             .addStatement("this.\$N = \$N", trackerSpec, TRACKER_FIELD)
+            .mapTrackingEvents(map, engines)
             .build()
 
         return TypeSpec
@@ -33,31 +41,74 @@ object ClassBuilder {
             .addMethod(constructorSpec)
     }
 
-    fun buildMethod(name: String, event: String, parameters: List<ExtraProperty> = listOf()): MethodSpec {
-        val parametersSpec = parameters.map {
-            ParameterSpec.builder(String::class.java, it.name).build()
+    fun buildMethod(name: String, event: String, properties: Map<String, String> = mapOf()): MethodSpec {
+        val parametersSpec = properties.map {
+            ParameterSpec.builder(String::class.java, it.value).build()
         }
-        val propertiesLiteral = if (parameters.isNotEmpty()) "properties" else "null"
+        val propertiesLiteral = if (properties.isNotEmpty()) "properties" else "null"
         return with(MethodSpec.methodBuilder(name)) {
             addAnnotation(Override::class.java)
             addModifiers(Modifier.PUBLIC)
             returns(TypeName.VOID)
             addParameters(parametersSpec)
-            buildProperties(propertiesLiteral, parameters)
+            buildProperties(propertiesLiteral, properties)
             addStatement("\$N.track(\$S, \$N)", TRACKER_FIELD, event, propertiesLiteral)
             build()
         }
     }
 
-    private fun MethodSpec.Builder.buildProperties(
-        propertiesName: String,
-        parameters: List<ExtraProperty>
+    private fun MethodSpec.Builder.mapTrackingEvents(
+        map: List<String>,
+        engines: List<TrackerEnum>
     ): MethodSpec.Builder {
-        if (parameters.isEmpty()) return this
-        val mapFormat = "\$T<String, String> \$N = new \$T<String, String>()"
-        addStatement(mapFormat, Map::class.java, propertiesName, HashMap::class.java)
-        parameters.forEach { property ->
-            addStatement("\$N.put(\$S, \$N)", propertiesName, property.key, property.name)
+        val listEnumType = ParameterizedTypeName.get(
+            List::class.java,
+            TrackerEnum::class.java
+        )
+        val listVariable = "list"
+        val enums = engines.joinToString(",") { "\$4T.$it" }
+        addStatement(
+            "\$1T \$2N = \$3T.asList($enums)",
+            listEnumType,
+            listVariable,
+            Arrays::class.java,
+            TrackerEnum::class.java
+        )
+
+        val mappingType = ParameterizedTypeName.get(
+            ClassName.get(Map::class.java),
+            ClassName.get(String::class.java),
+            listEnumType
+        )
+        val mappingVariable = "mapping"
+        addStatement(
+            "\$T \$N = new \$T()",
+            mappingType,
+            mappingVariable,
+            HashMap::class.java
+        )
+
+        map.forEach {
+            addStatement("\$N.put(\$S, \$N)", mappingVariable, it, listVariable)
+        }
+
+        addStatement("this.\$N.mapExtraEvents(\$N)", TRACKER_FIELD, mappingVariable)
+        return this
+    }
+
+    private fun MethodSpec.Builder.buildProperties(
+        variableName: String,
+        properties: Map<String, String>
+    ): MethodSpec.Builder {
+        if (properties.isEmpty()) return this
+        addStatement(
+            "\$T<String, String> \$N = new \$T()",
+            Map::class.java,
+            variableName,
+            HashMap::class.java
+        )
+        properties.forEach { property ->
+            addStatement("\$N.put(\$S, \$N)", variableName, property.key, property.value)
         }
         return this
     }

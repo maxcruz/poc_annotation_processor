@@ -4,7 +4,7 @@ import com.example.annotation.Event
 import com.example.annotation.EventTracker
 import com.example.annotation.Property
 
-@EventTracker(["MIXPANEL"])
+@EventTracker
 interface MainTracker {
 
     @Event("Main_View")
